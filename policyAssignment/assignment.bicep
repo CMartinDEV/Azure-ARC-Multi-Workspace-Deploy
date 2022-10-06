@@ -19,3 +19,5 @@ resource policyAssignment 'Microsoft.Authorization/policyAssignments@2021-06-01'
     }   
   }     
 }
+
+output smi string = policyAssignment.identity.principalId
