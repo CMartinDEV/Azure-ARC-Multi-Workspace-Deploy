@@ -45,7 +45,7 @@ module linuxAssignment 'policyAssignment/assignment.bicep' = {
     policyId: linuxPolicyId 
   }    
 }
-
+/*
 module windowsRbac 'rbacAssignment/rbacAssignment.bicep' = {
   name: 'Windows-Role-Assignment'
   scope: resourceGroup(rg.name)
@@ -65,3 +65,4 @@ module linuxRbac 'rbacAssignment/rbacAssignment.bicep' = {
     roleDefinitionId: 'b24988ac-6180-42a0-ab88-20f7382dd24c'   
   }
 }
+*/

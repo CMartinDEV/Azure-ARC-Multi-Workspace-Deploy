@@ -9,8 +9,8 @@ az deployment sub create -l eastus `
   --parameters location=eastus `
   rgName=arc-rg-test `
   logAnalyticsWorkspaceName=lukearctest `
-  windowsPolicyId=/subscriptions/32eb88b4-4029-4094-85e3-ec8b7ce1fc00/providers/Microsoft.Authorization/policyDefinitions/Deploy-MMA-ARC-Windows `
-  linuxPolicyId=/subscriptions/32eb88b4-4029-4094-85e3-ec8b7ce1fc00/providers/Microsoft.Authorization/policyDefinitions/Deploy-MMA-ARC-Linux
+  windowsPolicyId=/subscriptions//providers/Microsoft.Authorization/policyDefinitions/Deploy-MMA-ARC-Windows `
+  linuxPolicyId=/subscriptions//providers/Microsoft.Authorization/policyDefinitions/Deploy-MMA-ARC-Linux
 #>
 
 $data = Import-Csv -Path $pathToCsv -Header RGName,WorksapceName;
