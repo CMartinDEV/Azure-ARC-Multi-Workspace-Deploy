@@ -7,7 +7,7 @@ A storage account is provisioned for each resource group to be linked to Log Ana
 # Requirements
 Az.Accounts PowerShell module
 Az.Resources PowerShell module
-Bicep must be installed for PowerShell, but the shell will do this for you in most cases.
+Bicep must be installed https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install#azure-powershell
 
 # Example
 
