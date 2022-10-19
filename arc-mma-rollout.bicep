@@ -16,7 +16,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-module la 'logAnalyticsWorkspace/logAnalytics.bicep' = {
+module logAnalyticsWithSentinel 'sentinel/logAnalytics-with-Sentinel.bicep' = {
   name: '${rgName}-${logAnalyticsWorkspaceName}-deploy' 
   scope: resourceGroup(rg.name)
   params: {
@@ -26,50 +26,8 @@ module la 'logAnalyticsWorkspace/logAnalytics.bicep' = {
   }  
 }
 
-module windowsAssignment 'policyAssignment/assignment.bicep' = {
-  name: '${rgName}-${logAnalyticsWorkspaceName}-Windows-Policy-deploy'
-  scope: resourceGroup(rg.name)
-  params: {
-    name: '${rgName}-${logAnalyticsWorkspaceName}-Windows'
-    location: location
-    logAnalyticsWorkspaceId: la.outputs.id
-    policyId: windowsPolicyId
-  }    
-}
-
-module linuxAssignment 'policyAssignment/assignment.bicep' = {
-  name: '${rgName}-${logAnalyticsWorkspaceName}-Linux-Policy-deploy'
-  scope: resourceGroup(rg.name)
-  params: {
-    name: '${rgName}-${logAnalyticsWorkspaceName}-Linux'
-    location: location
-    logAnalyticsWorkspaceId: la.outputs.id
-    policyId: linuxPolicyId 
-  }    
-}
-
-module windowsRbac 'rbacAssignment/rbacAssignment.bicep' = {
-  name: 'Windows-Role-Assignment'
-  scope: resourceGroup(rg.name)
-  params: {
-    name: 'windowsRbac'
-    objectId: windowsAssignment.outputs.smi
-    roleDefinitionId: '/providers/Microsoft.Authorization/roleDefinitions/92aaf0da-9dab-42b6-94a3-d43ce8d16293'   
-  }
-}
-
-module linuxRbac 'rbacAssignment/rbacAssignment.bicep' = {
-  name: 'Linux-Role-Assignment'
-  scope: resourceGroup(rg.name)
-  params: {
-    name: 'linuxRbac'
-    objectId: linuxAssignment.outputs.smi
-    roleDefinitionId: '/providers/Microsoft.Authorization/roleDefinitions/92aaf0da-9dab-42b6-94a3-d43ce8d16293'   
-  }
-}
-
 module storageAccount 'storageAccount/storageAccount.bicep' = {
-  name: uniqueString(logAnalyticsWorkspaceName)
+  name: '${rgName}-${storageAccountName}-Storage-Account-deploy'
   scope: resourceGroup(rg.name)
   params: {
     name: storageAccountName
@@ -77,5 +35,44 @@ module storageAccount 'storageAccount/storageAccount.bicep' = {
   }
 }
 
+module windowsPolicyAssignment 'policyAssignment/assignment.bicep' = {
+  name: '${rgName}-${logAnalyticsWorkspaceName}-Windows-Policy-deploy'
+  scope: resourceGroup(rg.name)
+  params: {
+    name: '${rgName}-${logAnalyticsWorkspaceName}-Windows'
+    location: location
+    logAnalyticsWorkspaceId: logAnalyticsWithSentinel.outputs.id
+    policyId: windowsPolicyId
+  }    
+}
 
+module linuxPolicyAssignment 'policyAssignment/assignment.bicep' = {
+  name: '${rgName}-${logAnalyticsWorkspaceName}-Linux-Policy-deploy'
+  scope: resourceGroup(rg.name)
+  params: {
+    name: '${rgName}-${logAnalyticsWorkspaceName}-Linux'
+    location: location
+    logAnalyticsWorkspaceId: logAnalyticsWithSentinel.outputs.id
+    policyId: linuxPolicyId 
+  }    
+}
 
+module grantWindowsPolicyLogAnalyticsContributor 'rbacAssignment/rbacAssignment.bicep' = {
+  name: 'Windows-Role-Assignment'
+  scope: resourceGroup(rg.name)
+  params: {
+    name: 'windowsRbac'
+    objectId: windowsPolicyAssignment.outputs.smi
+    roleDefinitionId: '/providers/Microsoft.Authorization/roleDefinitions/92aaf0da-9dab-42b6-94a3-d43ce8d16293'   
+  }
+}
+
+module grantLinuxPolicyLogAnalyticsContributor 'rbacAssignment/rbacAssignment.bicep' = {
+  name: 'Linux-Role-Assignment'
+  scope: resourceGroup(rg.name)
+  params: {
+    name: 'linuxRbac'
+    objectId: linuxPolicyAssignment.outputs.smi
+    roleDefinitionId: '/providers/Microsoft.Authorization/roleDefinitions/92aaf0da-9dab-42b6-94a3-d43ce8d16293'   
+  }
+}
