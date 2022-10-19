@@ -5,7 +5,8 @@ param objectId string
 resource roleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
   name: guid(subscription().id,resourceGroup().name,name)
   properties: { 
-    roleDefinitionId: '/providers/Microsoft.Authorization/roleDefinitions/${roleDefinitionId}'
+    roleDefinitionId: roleDefinitionId
     principalId: objectId 
+    principalType: 'ServicePrincipal'
   }
 }

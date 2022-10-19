@@ -45,14 +45,14 @@ module linuxAssignment 'policyAssignment/assignment.bicep' = {
     policyId: linuxPolicyId 
   }    
 }
-/*
+
 module windowsRbac 'rbacAssignment/rbacAssignment.bicep' = {
   name: 'Windows-Role-Assignment'
   scope: resourceGroup(rg.name)
   params: {
     name: 'windowsRbac'
     objectId: windowsAssignment.outputs.smi
-    roleDefinitionId: 'b24988ac-6180-42a0-ab88-20f7382dd24c'   
+    roleDefinitionId: '/providers/Microsoft.Authorization/roleDefinitions/92aaf0da-9dab-42b6-94a3-d43ce8d16293'   
   }
 }
 
@@ -62,7 +62,7 @@ module linuxRbac 'rbacAssignment/rbacAssignment.bicep' = {
   params: {
     name: 'linuxRbac'
     objectId: linuxAssignment.outputs.smi
-    roleDefinitionId: 'b24988ac-6180-42a0-ab88-20f7382dd24c'   
+    roleDefinitionId: '/providers/Microsoft.Authorization/roleDefinitions/92aaf0da-9dab-42b6-94a3-d43ce8d16293'   
   }
 }
-*/
+
