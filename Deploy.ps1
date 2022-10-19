@@ -15,7 +15,7 @@ Param(
   [string]$Location
 )
 
-$data = Import-Csv -Path $Path -Header RGName,WorkspaceName
+$data = Import-Csv -Path $Path -Header RGName,WorkspaceName,StorageAccountName
 
 Write-Verbose -Message "Connecting"
 
@@ -27,7 +27,7 @@ if ($null -eq $ctx -or ($null -eq $ctx.Subscription) -or ($ctx.Subscription.Id -
 
 Write-Verbose -Message "Deploying policy definitions"
 
-$policy = New-AzDeployment -Location $Location -TemplateFile .\policyDefinition\policyDefinitions-sub.bicep -Verbose:$false -ErrorAction Stop
+$policy = New-AzDeployment -Location $Location -TemplateFile (Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath policyDefinition) -ChildPath "policyDefinitions-sub.bicep") -Verbose:$false -ErrorAction Stop
 
 $windowsPolicyId = $policy.Outputs['windowsId'].Value
 
@@ -37,6 +37,7 @@ $jobs = $data | ForEach-Object -Process {
 
   $rgName = $_.RGName
   $wsName = $_.WorkspaceName
+  $saName = $_.StorageAccountName
 
   $name = "$($rgName)-$($wsName)-$Location"
 
@@ -48,9 +49,10 @@ $jobs = $data | ForEach-Object -Process {
     logAnalyticsWorkspaceName = $wsName
     windowsPolicyId = $windowsPolicyId
     linuxPolicyId = $linuxPolicyId
+    storageAccountName = $saName
   }
 
-  New-AzDeployment -Name $name -Location $Location -TemplateFile .\arc-mma-rollout.bicep -TemplateParameterObject $params -AsJob -Verbose:$false
+  New-AzDeployment -Name $name -Location $Location -TemplateFile (Join-Path -Path $PSScriptRoot -ChildPath "arc-mma-rollout.bicep") -TemplateParameterObject $params -AsJob -Verbose:$false
 
 } | Wait-Job
 
@@ -63,5 +65,5 @@ $data | ForEach-Object -Process {
 
   $uri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$($_.RGName.ToLower())/providers/Microsoft.OperationalInsights/workspaces/$($_.WorkspaceName.ToLower())/datasources/SecurityInsightsSecurityEventCollectionConfiguration?api-version=2015-11-01-preview"
 
-  Invoke-AzRestMethod -Uri $uri -Payload $payload -Method Put
+  $null = Invoke-AzRestMethod -Uri $uri -Payload $payload -Method Put
 }
