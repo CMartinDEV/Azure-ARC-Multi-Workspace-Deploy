@@ -40,6 +40,38 @@
 .DESCRIPTION 
  Deploy all resources needed to use Azure policy to send security logs to log analytics via Sentinel and Arc. Optionally create a .zip file containing the scripts to run on each machine to be added to Arc. 
 
+.PARAMETER Path
+ The path to a .csv file with 3 columns. Resource group name, workspace name, storage account name. Do not provide headers.
+
+.PARAMETER OutputPath
+ Path where a .zip file of the .ps1 and .sh scripts needed to onboard servers to Arc for each resource group/workspace.
+
+.PARAMETER TenantId
+ The tenant id of the subscription where the workspaces and resource groups will be deployed.
+
+.PARAMETER SubscriptionId
+ The id of the subscription where the workspaces and resource groups will be deployed.
+
+.PARAMETER Location
+ The location where the workspaces and resource groups will be deployed.
+
+.PARAMETER ApplicationCredential
+ A credential object containing the ClientId and ClientSecret of an application with the rights needed to add servers to Arc in your resource group(s).
+
+.PARAMETER Force
+ Force overwrite the file at -OutputPath, if one is there.
+
+.EXAMPLE
+  No scripts will be provided, only the Azure infrastructure will be created.
+
+ .\Invoke-MSSentinelOnLogAnalyticsDeployment.ps1 -Path .\csvExample.csv -SubscriptionId cdb7af97-3849-4890-9a92-e5bbbadbd239 -Location "eastus"
+
+.EXAMPLE
+  Scripts will be zipped into folders, one folder per resource group, in the container at .\ArcOnboardScripts.zip. Each folder will contain one .ps1 file and one .sh file. Use for Windows and Linux, respectively.
+
+  WARNING! These files will have your applications ClientId and Secret in plain text. This is by design, as these scripts are intended to be run locally on each machine. Make sure your application doesn't have too much access.
+
+ .\Invoke-MSSentinelOnLogAnalyticsDeployment.ps1 -Path .\csvExample.csv -OutputPath .\ArcOnboardScripts.zip -TenantId 364426d1-acb8-4a1c-9e64-d3311727b763 -SubscriptionId cdb7af97-3849-4890-9a92-e5bbbadbd239 -Location "eastus" -ApplicationCredential $appCredential
 #> 
 [CmdletBinding(DefaultParameterSetName = 'NoOutput')]
 Param(
@@ -73,8 +105,8 @@ Param(
 
   [Parameter(ParameterSetName = 'Output')]
   [switch]$Force,
-  [Parameter(ParameterSetName = 'Output')]
-  [switch]$Confirm
+
+  [switch]$DataExportRuleEnabled
 )
 
 function Set-ArcVariables {
@@ -129,6 +161,7 @@ $jobs = $data | ForEach-Object -Process {
     windowsPolicyId = $windowsPolicyId
     linuxPolicyId = $linuxPolicyId
     storageAccountName = $saName
+    enableExport = $DataExportRuleEnabled.IsPresent
   }
 
   New-AzDeployment -Name $name -Location $Location -TemplateFile (Join-Path -Path $PSScriptRoot -ChildPath "arc-mma-rollout.bicep") -TemplateParameterObject $params -AsJob -Verbose:$false
@@ -154,6 +187,8 @@ $data | ForEach-Object -Process {
 if ($PSCmdlet.ParameterSetName -eq 'Output') {
 
   Write-Verbose -Message "Generating Arc onboarding scripts"
+
+  Write-Warning -Message "The generated scripts will contain the ApplicationCredential Client Id and Secret in plain text, so they can be deployed to individual endpoints. Use caution."
 
   $tmpFolder = New-Item -ItemType Directory -Path (Join-Path -Path $env:TEMP -ChildPath "ArcOnboardScripts")
   $folderPaths = @()
@@ -192,7 +227,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Output') {
 
   Write-Verbose -Message "Creating archive of scripts at $OutputPath"
 
-  Compress-Archive -Path $folderPaths -DestinationPath $OutputPath -Force:$Force -Confirm:$Confirm
+  Compress-Archive -Path $folderPaths -DestinationPath $OutputPath -Force:$Force
 
   Write-Verbose -Message "Cleaning up..."
 
@@ -202,5 +237,3 @@ if ($PSCmdlet.ParameterSetName -eq 'Output') {
 }
 
 Write-Verbose -Message "Done!"
-
-

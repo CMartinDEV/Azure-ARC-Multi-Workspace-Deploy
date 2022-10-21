@@ -1,6 +1,7 @@
 param name string
 param location string
 param saId string
+param enableDataExport bool
 
 resource la 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   location: location
@@ -31,7 +32,7 @@ resource dataExport 'Microsoft.OperationalInsights/workspaces/dataExports@2020-0
     destination: {
       resourceId: saId
     }
-    enable: false
+    enable: enableDataExport
     tableNames: [
       'AACAudit'
       'AACHttpRequest'

@@ -5,6 +5,7 @@ param logAnalyticsWorkspaceName string
 param storageAccountName string
 param windowsPolicyId string
 param linuxPolicyId string
+param enableExport bool
 param tags object = {}
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -23,6 +24,7 @@ module logAnalyticsWithSentinel 'sentinel/logAnalytics-with-Sentinel.bicep' = {
     location: location
     name: logAnalyticsWorkspaceName  
     saId: storageAccount.outputs.saId
+    enableDataExport: enableExport
   }  
 }
 
