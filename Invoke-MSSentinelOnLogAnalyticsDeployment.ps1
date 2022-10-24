@@ -166,7 +166,7 @@ End {
   Write-Verbose -Message 'Enabling Security Logs via Legacy Agent data connectors'
   
   $data | Enable-SecurityLogViaLegacyConnectorDataConnector -SubscriptionId $SubscriptionId -ErrorAction Continue
-  
+
   if ($PSCmdlet.ParameterSetName -like '*-Output') {
   
     Write-Verbose -Message 'Generating Arc onboarding scripts'
@@ -186,23 +186,9 @@ End {
   
       $windowsScriptPath = Join-Path -Path $rgFolder.FullName -ChildPath "$($_.ResourceGroupName).ps1"
       $linuxScriptPath = Join-Path -Path $rgFolder.FullName -ChildPath "$($_.ResourceGroupName).sh"
-  
-      $arcParams = @{
-        InputObject = $windowsScript
-        ClientId = $ApplicationCredential.UserName
-        ClientSecret = $ApplicationCredential.GetNetworkCredential().Password
-        SubscriptionId = $SubscriptionId
-        RGName = $_.ResourceGroupName
-        TenantId = $TenantId
-        Location = $Location
-        CorrelationId = [Guid]::NewGuid().ToString()
-      }
-  
-      Set-ArcVariables @arcParams | Out-File -FilePath $windowsScriptPath
-      
-      $arcParams['InputObject'] = $linuxScript
-  
-      Set-ArcVariables @arcParams | Out-File -FilePath $linuxScriptPath
+
+      New-ArcOnboardFolder -TenantId $TenantId -SubscriptionId $SubscriptionId -ResourceGroupName $_.ResourceGroupName -Location $Location -ApplicationCredential $ApplicationCredential -Template $windowsScript -Path $windowsScriptPath
+      New-ArcOnboardFolder -TenantId $TenantId -SubscriptionId $SubscriptionId -ResourceGroupName $_.ResourceGroupName -Location $Location -ApplicationCredential $ApplicationCredential -Template $linuxScript -Path $linuxScriptPath
     }
   
     Write-Verbose -Message "Creating archive of scripts at $OutputPath"
