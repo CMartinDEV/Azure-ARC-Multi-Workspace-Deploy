@@ -26,7 +26,7 @@ PowerShell example with Output
 
 CSV Example  
 
-Columns are RGName, WorkspaceName, StorageAccountName. Do not use headers.  
+Columns are ResourceGroupName, WorkspaceName, StorageAccountName. Do not use headers.  
 
 ```CSV
 rg_arc_law_1,arc-law-1,samyorgarclaw1

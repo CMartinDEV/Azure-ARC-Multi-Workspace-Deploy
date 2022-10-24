@@ -38,7 +38,9 @@
 <# 
 
 .DESCRIPTION 
- Deploy all resources needed to use Azure policy to send security logs to log analytics via Sentinel and Arc. Optionally create a .zip file containing the scripts to run on each machine to be added to Arc. 
+ Deploy all resources needed to use Azure policy to send security logs to log analytics via Sentinel and Arc. Optionally create a .zip file containing the scripts to run on each machine to be added to Arc.
+
+ Utilized PowerShell jobs to run each resource group deployment simultaneously.
 
 .PARAMETER Path
  The path to a .csv file with 3 columns. Resource group name, workspace name, storage account name. Do not provide headers.
@@ -73,10 +75,10 @@
 
  .\Invoke-MSSentinelOnLogAnalyticsDeployment.ps1 -Path .\csvExample.csv -OutputPath .\ArcOnboardScripts.zip -TenantId 364426d1-acb8-4a1c-9e64-d3311727b763 -SubscriptionId cdb7af97-3849-4890-9a92-e5bbbadbd239 -Location "eastus" -ApplicationCredential $appCredential
 #> 
-[CmdletBinding(DefaultParameterSetName = 'NoOutput')]
+[CmdletBinding(DefaultParameterSetName = 'File-NoOutput')]
 Param(
-  [Parameter(Mandatory, Position = 0, ParameterSetName = 'Output')]
-  [Parameter(Mandatory, Position = 0, ParameterSetName = 'NoOutput')]
+  [Parameter(Mandatory, Position = 0, ParameterSetName = 'File-Output')]
+  [Parameter(Mandatory, Position = 0, ParameterSetName = 'File-NoOutput')]
   [ValidateScript({
     if (-not (Test-Path -Path $_ -PathType Leaf)) {
       throw "No CSV input found at $_"
@@ -86,154 +88,133 @@ Param(
   })]
   [string]$Path,
 
-  [Parameter(Mandatory, Position = 1, ParameterSetName = 'Output')]
+  [Parameter(Mandatory, ValueFromPipeline, Position = 0, ParameterSetName = 'Object-Output')]
+  [Parameter(Mandatory, ValueFromPipeline, Position = 0, ParameterSetName = 'Object-NoOutput')]
+  [PSObject[]]$InputObject,
+
+  [Parameter(Mandatory, Position = 1, ParameterSetName = 'File-Output')]
+  [Parameter(Mandatory, Position = 1, ParameterSetName = 'Object-Output')]
   [string]$OutputPath,
 
-  [Parameter(Mandatory, Position = 2, ParameterSetName = 'Output')]
+  [Parameter(Mandatory, Position = 2, ParameterSetName = 'File-Output')]
+  [Parameter(Mandatory, Position = 2, ParameterSetName = 'Object-Output')]
   [Guid]$TenantId,
 
-  [Parameter(Mandatory, Position = 3, ParameterSetName = 'Output')]
-  [Parameter(Mandatory, Position = 1, ParameterSetName = 'NoOutput')]
+  [Parameter(Mandatory, Position = 3, ParameterSetName = 'File-Output')]
+  [Parameter(Mandatory, Position = 1, ParameterSetName = 'File-NoOutput')]
+  [Parameter(Mandatory, Position = 3, ParameterSetName = 'Object-Output')]
+  [Parameter(Mandatory, Position = 1, ParameterSetName = 'Object-NoOutput')]
   [Guid]$SubscriptionId,
 
-  [Parameter(Mandatory, Position = 4, ParameterSetName = 'Output')]
-  [Parameter(Mandatory, Position = 2, ParameterSetName = 'NoOutput')]
+  [Parameter(Mandatory, Position = 4, ParameterSetName = 'File-Output')]
+  [Parameter(Mandatory, Position = 2, ParameterSetName = 'File-NoOutput')]
+  [Parameter(Mandatory, Position = 4, ParameterSetName = 'Object-Output')]
+  [Parameter(Mandatory, Position = 2, ParameterSetName = 'Object-NoOutput')]
   [string]$Location,
 
-  [Parameter(Mandatory, Position = 5, ParameterSetName = 'Output')]
+  [Parameter(Mandatory, Position = 5, ParameterSetName = 'File-Output')]
+  [Parameter(Mandatory, Position = 5, ParameterSetName = 'Object-Output')]
   [PSCredential]$ApplicationCredential,
 
-  [Parameter(ParameterSetName = 'Output')]
+  [Parameter(ParameterSetName = 'File-Output')]
+  [Parameter(ParameterSetName = 'Object-Output')]
   [switch]$Force,
 
   [switch]$DataExportRuleEnabled
 )
+Begin {
 
-function Set-ArcVariables {
-  Param($InputObject, $ClientId, $ClientSecret, $SubscriptionId, $RGName, $TenantId, $Location, $CorrelationId)
+  . (Join-Path -Path $PSScriptRoot -ChildPath 'MSSentinelOnLogAnalyticsDeploymentFunctions.ps1')
+  
+  Confirm-AzConnected -SubscriptionId $SubscriptionId -ErrorAction Stop
+  
+  $policyIds = Deploy-AzInstallMMAOnArcPolicyObjects -Location $Location -ErrorAction Stop
 
-  $InputObject.Replace("<ClientId>", $ClientId).Replace("<ClientSecret>", $ClientSecret).Replace("<SubscriptionId>", $SubscriptionId).Replace("<RGName>", $RGName).Replace("<TenantId>", $TenantId).Replace("<Location>", $Location).Replace("<CorrelationId>", $CorrelationId)
+  [System.Collections.ArrayList]$jobs = @()
 }
+Process {
 
-function Enable-SecurityLogViaLegacyConnectorDataConnector {
-  [CmdletBinding()]
-  Param($SubscriptionId, $ResourceGroupName, $WorkspaceName)
-
-  $payload = @{kind='SecurityInsightsSecurityEventCollectionConfiguration';properties=@{tier='Recommended'}} | ConvertTo-Json
-
-  $uri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$($ResourceGroupName.ToLower())/providers/Microsoft.OperationalInsights/workspaces/$($WorkspaceName.ToLower())/datasources/SecurityInsightsSecurityEventCollectionConfiguration?api-version=2015-11-01-preview"
-
-  $null = Invoke-AzRestMethod -Uri $uri -Payload $payload -Method Put -Verbose:$false
-}
-
-$data = Import-Csv -Path $Path -Header RGName,WorkspaceName,StorageAccountName
-
-Write-Verbose -Message "Connecting"
-
-$ctx = Get-AzContext -ErrorAction Stop
-
-if ($null -eq $ctx -or ($null -eq $ctx.Subscription) -or ($ctx.Subscription.Id -ne $SubscriptionId.ToString())) {
-  $null = Connect-AzAccount -SubscriptionId $SubscriptionId -Verbose:$false -ErrorAction Stop
-}
-
-Write-Verbose -Message "Deploying policy definitions"
-
-$policy = New-AzDeployment -Location $Location -TemplateFile (Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath policyDefinition) -ChildPath "policyDefinitions-sub.bicep") -Verbose:$false -ErrorAction Stop
-
-$windowsPolicyId = $policy.Outputs['windowsId'].Value
-
-$linuxPolicyId = $policy.Outputs['linuxId'].Value
-
-$jobs = $data | ForEach-Object -Process {
-
-  $rgName = $_.RGName
-  $wsName = $_.WorkspaceName
-  $saName = $_.StorageAccountName
-
-  $name = "$($rgName)-$($wsName)-$Location"
-
-  Write-Verbose -Message "Deployment for $rgName started"
-
-  $params = @{
-    rgName = $rgName
-    location = $Location
-    logAnalyticsWorkspaceName = $wsName
-    windowsPolicyId = $windowsPolicyId
-    linuxPolicyId = $linuxPolicyId
-    storageAccountName = $saName
-    enableExport = $DataExportRuleEnabled.IsPresent
+  if ($PSCmdlet.ParameterSetName -like 'File-*') {
+    $data = Import-Csv -Path $Path -Header ResourceGroupName,WorkspaceName,StorageAccountName -ErrorAction Stop
+  }
+  else {
+    $data = $InputObject
   }
 
-  New-AzDeployment -Name $name -Location $Location -TemplateFile (Join-Path -Path $PSScriptRoot -ChildPath "arc-mma-rollout.bicep") -TemplateParameterObject $params -AsJob -Verbose:$false
+  $deploymentParams = @{
+    ResourceGroupName = $rgName
+    WorkspaceName = $wsName
+    StorageAccountName = $saName
+    Location = $Location
+    WindowsPolicyId = $policyIds.WindowsPolicyId
+    LinuxPolicyId = $policyIds.LinuxPolicyId
+    DataExportRuleEnabled = $DataExportRuleEnabled.IsPresent
+  }
+
+  $null = $jobs.Add((Start-MSSentinelResourceGroupDeployment @deploymentParams))
 
 }
-
-Write-Verbose -Message "All deployments started"
-
-$jobs = $jobs | Wait-Job -Verbose:$false
-$jobs | Receive-Job -Verbose:$false | Out-Null
-$jobs | Remove-Job
-
-Write-Verbose -Message "All deployments complete"
-
-Write-Verbose -Message "Enabling Security Logs via Legacy Agent data connectors"
-
-$data | ForEach-Object -Process {
-
-  Enable-SecurityLogViaLegacyConnectorDataConnector -SubscriptionId $SubscriptionId -ResourceGroupName $_.RGName -WorkspaceName $_.WorkspaceName -ErrorAction Continue
-
-}
-
-if ($PSCmdlet.ParameterSetName -eq 'Output') {
-
-  Write-Verbose -Message "Generating Arc onboarding scripts"
-
-  Write-Warning -Message "The generated scripts will contain the ApplicationCredential Client Id and Secret in plain text, so they can be deployed to individual endpoints. Use caution."
-
-  $tmpFolder = New-Item -ItemType Directory -Path (Join-Path -Path $env:TEMP -ChildPath "ArcOnboardScripts")
-  $folderPaths = @()
-
-  $windowsScript = Get-Content -Path (Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath templates) -ChildPath "OnboardWindowsTemplate.ps1")
-  $linuxScript = Get-Content -Path (Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath templates) -ChildPath "OnboardLinuxTemplate.sh")
-
-  $correlationId = [Guid]::NewGuid().ToString()
-
-  $data | ForEach-Object -Process {
-
-    $rgFolder = New-Item -ItemType Directory -Path (Join-Path -Path $tmpFolder.FullName -ChildPath $_.RGName)
-
-    $folderPaths += $rgFolder
-
-    $windowsScriptPath = Join-Path -Path $rgFolder.FullName -ChildPath "$($_.RGName).ps1"
-    $linuxScriptPath = Join-Path -Path $rgFolder.FullName -ChildPath "$($_.RGName).sh"
-
-    $arcParams = @{
-      InputObject = $windowsScript
-      ClientId = $ApplicationCredential.UserName
-      ClientSecret = $ApplicationCredential.GetNetworkCredential().Password
-      SubscriptionId = $SubscriptionId
-      RGName = $_.RGName
-      TenantId = $TenantId
-      Location = $Location
-      CorrelationId = $correlationId
+End {
+  Write-Verbose -Message 'All deployments started'
+  
+  $jobs = $jobs | Wait-Job -Verbose:$false
+  $jobs | Receive-Job -Verbose:$false | Out-Null
+  $jobs | Remove-Job
+  
+  Write-Verbose -Message 'All deployments complete'
+  
+  Write-Verbose -Message 'Enabling Security Logs via Legacy Agent data connectors'
+  
+  $data | Enable-SecurityLogViaLegacyConnectorDataConnector -SubscriptionId $SubscriptionId -ErrorAction Continue
+  
+  if ($PSCmdlet.ParameterSetName -like '*-Output') {
+  
+    Write-Verbose -Message 'Generating Arc onboarding scripts'
+  
+    Write-Warning -Message 'The generated scripts will contain the ApplicationCredential Client Id and Secret in plain text, so they can be deployed to individual endpoints. Use caution.'
+  
+    [System.Collections.ArrayList]$folderPaths = @()
+  
+    $windowsScript = Get-Content -Path (Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath templates) -ChildPath 'OnboardWindowsTemplate.ps1')
+    $linuxScript = Get-Content -Path (Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath templates) -ChildPath 'OnboardLinuxTemplate.sh')
+  
+    $data | ForEach-Object -Process {
+  
+      $rgFolder = New-Item -ItemType Directory -Path (Join-Path -Path $env:TEMP -ChildPath $_.ResourceGroupName)
+  
+      $null = $folderPaths.Add($rgFolder.FullName)
+  
+      $windowsScriptPath = Join-Path -Path $rgFolder.FullName -ChildPath "$($_.ResourceGroupName).ps1"
+      $linuxScriptPath = Join-Path -Path $rgFolder.FullName -ChildPath "$($_.ResourceGroupName).sh"
+  
+      $arcParams = @{
+        InputObject = $windowsScript
+        ClientId = $ApplicationCredential.UserName
+        ClientSecret = $ApplicationCredential.GetNetworkCredential().Password
+        SubscriptionId = $SubscriptionId
+        RGName = $_.ResourceGroupName
+        TenantId = $TenantId
+        Location = $Location
+        CorrelationId = [Guid]::NewGuid().ToString()
+      }
+  
+      Set-ArcVariables @arcParams | Out-File -FilePath $windowsScriptPath
+      
+      $arcParams['InputObject'] = $linuxScript
+  
+      Set-ArcVariables @arcParams | Out-File -FilePath $linuxScriptPath
     }
-
-    Set-ArcVariables @arcParams | Out-File -FilePath $windowsScriptPath
-    
-    $arcParams['InputObject'] = $linuxScript
-
-    Set-ArcVariables @arcParams | Out-File -FilePath $linuxScriptPath
+  
+    Write-Verbose -Message "Creating archive of scripts at $OutputPath"
+  
+    Compress-Archive -Path $folderPaths -DestinationPath $OutputPath -Force:$Force
+  
+    Write-Verbose -Message 'Cleaning up...'
+  
+    $folderPaths | Remove-Item -Recurse -Force -Confirm:$false
+  
+    Get-Item -Path $OutputPath
   }
-
-  Write-Verbose -Message "Creating archive of scripts at $OutputPath"
-
-  Compress-Archive -Path $folderPaths -DestinationPath $OutputPath -Force:$Force
-
-  Write-Verbose -Message "Cleaning up..."
-
-  Remove-Item -Path $tmpFolder.FullName -Recurse -Force -Confirm:$false
-
-  Get-Item -Path $OutputPath
+  
+  Write-Verbose -Message 'Done!'
 }
-
-Write-Verbose -Message "Done!"
